@@ -1,0 +1,884 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot,es-noshorthands]{babel}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs,array,longtable}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+
+% ---------------------------------------------------------------
+% Entornos
+% ---------------------------------------------------------------
+\theoremstyle{plain}
+\newtheorem{proposicion}{Proposición}
+\newtheorem{conjetura}{Conjetura}
+\newtheorem{corolario}{Corolario}
+\theoremstyle{definition}
+\newtheorem{definicion}{Definición}
+\newtheorem{hipotesis}{Hipótesis}
+\theoremstyle{remark}
+\newtheorem{observacion}{Observación}
+
+\newcommand{\Nocc}{N_{\mathrm{occ}}}
+\newcommand{\vac}{\varnothing}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\one}{\mathbf{1}}
+\newcommand{\Hcl}{H^{\mathrm{cl}}}
+\newcommand{\Icl}{I^{\mathrm{cl}}}
+\newcommand{\modP}{\textsf{P}}
+\newcommand{\modS}{\textsf{S}}
+\newcommand{\pendiente}[1]{\textcolor{red!70!black}{[#1]}}
+
+\newenvironment{fase}[1]{\subsection*{#1}\begin{description}[leftmargin=0pt,itemsep=2pt]}{\end{description}}
+
+\title{Una extensión matricial del modelo de Schelling:\\
+lectura crítica del borrador y programa de investigación}
+\author{Documento de trabajo del proyecto \emph{Modelos Basados en Agentes}}
+\date{29 de septiembre de 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Este documento tiene dos partes. En la primera se hace una lectura crítica del
+borrador \emph{Una extensión matricial del modelo de Schelling basada en la
+incomodidad local} (versión~8) y del código Mesa asociado. La conclusión
+principal es que el borrador desarrolla con cuidado una sola de las dos
+versiones del modelo que nos interesan (la \emph{promediada}), mientras que el
+código implementa la otra (la \emph{de suma}), y que en el caso de dos
+poblaciones la versión promediada es exactamente equivalente a un modelo de
+Schelling clásico con orientación y umbral propios de cada población: la
+riqueza genuina del enfoque matricial aparece en la versión de suma, en el
+tratamiento de las casillas vacías y en el caso de tres o más poblaciones. En la
+segunda parte se propone un marco unificado para ambas versiones y un programa
+de investigación en nueve fases, con hipótesis contrastables, observables,
+protocolo de simulación y criterios de cierre para cada fase.
+\end{abstract}
+
+\tableofcontents
+
+% ===============================================================
+\section{Propósito y alcance}
+% ===============================================================
+
+El objetivo del proyecto es describir \emph{cuantitativamente} la dinámica de
+dos generalizaciones del modelo de desplazamiento de Schelling, gobernadas por
+una matriz de coeficientes de afinidad--aversión $H$ y un umbral de tolerancia
+$\tau$:
+\begin{itemize}
+  \item \textbf{Modelo \modP{} (promediado).} La incomodidad del agente es el
+  promedio de los coeficientes $H_{t_a,t_b}$ sobre sus vecinos ocupados; es
+  decir, depende de las \emph{proporciones} de cada población en la vecindad.
+  Es el modelo del borrador.
+  \item \textbf{Modelo \modS{} (de suma).} La incomodidad es la suma de los
+  coeficientes sobre los vecinos ocupados; depende de los \emph{recuentos}.
+  Es el modelo implementado en \texttt{schelling\_general2.py},
+  \texttt{schelling\_general3.py}, \texttt{schelling\_red2.py} y, como caso
+  particular, en \texttt{modelo.py} (modelo de tres grupos con población
+  neutral).
+\end{itemize}
+Ambas dinámicas dependen además de la geometría: retículos toroidales con
+vecindades de Moore o de von Neumann de radio $r$, y eventualmente redes.
+
+El documento está pensado para usarse como hoja de ruta: cada fase de la
+sección~\ref{sec:programa} tiene un objetivo, tareas, un entregable y un
+criterio de cierre, de modo que podamos avanzar paso a paso y revisar el plan al
+final de cada fase.
+
+% ===============================================================
+\section{Lectura crítica del borrador}
+\label{sec:critica}
+% ===============================================================
+
+\subsection{Lo que el borrador establece bien}
+
+\begin{enumerate}[label=(\alph*)]
+  \item La definición de la incomodidad local inducida por $H$ en la versión
+  promediada y la recuperación del modelo clásico con
+  $\Hcl=\left(\begin{smallmatrix}0&1\\1&0\end{smallmatrix}\right)$.
+  \item La invariancia de la regla de mejora bajo transformaciones afines
+  positivas $\widetilde H=\alpha H+\beta\one$, $\alpha>0$, con el umbral
+  transformado $\widetilde\tau=\alpha\tau+\beta$ (ecuación~(1) del borrador).
+  \item La observación de que el efecto de un movimiento sobre la incomodidad
+  total es local, y de que la mejora individual no implica, en general,
+  disminución de la incomodidad total.
+  \item La descomposición por filas del caso general $2\times2$
+  (sección~5.1), que es la observación clave: la orientación de la población
+  $i$ depende solo del signo del contraste $c_i=H_{i,\bar\imath}-H_{i,i}$.
+  \item La intuición de que las fronteras $c_i=0$ separan regímenes
+  cualitativamente distintos y de que conviene estudiar observables
+  macroscópicos (segregación, agentes cómodos, tiempo de convergencia,
+  clústeres).
+\end{enumerate}
+
+\subsection{Observaciones de fondo}
+
+\paragraph{O1. Dos modelos, una sola teoría.}
+El borrador desarrolla únicamente la versión promediada, pero todo el código del
+proyecto implementa la versión de suma. Las dos no son equivalentes salvo a
+densidad máxima (sin vacíos), y sus propiedades matemáticas difieren en puntos
+esenciales (grupo de invariancia, papel de los vacíos, existencia de función
+potencial; véase la sección~\ref{sec:marco}). Además, no hay en el repositorio
+una implementación de la versión promediada, por lo que no está claro con qué
+programa se generaron las figuras~1--11. El programa debe tratar ambos modelos
+en paralelo y con una única implementación parametrizada.
+
+\paragraph{O2. En el caso de dos poblaciones, el modelo \modP{} se reduce al
+clásico.}
+La sección~5.1 del borrador contiene ya el resultado, pero no se extrae la
+consecuencia. Para un agente de tipo $i$ con $n_a>0$,
+\[
+  I^H_a = H_{i,i} + c_i\,\Icl_a ,\qquad c_i = H_{i,\bar\imath}-H_{i,i},
+\]
+y la condición de comodidad con el umbral común $\tau$ es
+$\Icl_a\le\theta_i:=(\tau-H_{i,i})/c_i$ si $c_i>0$ (y la desigualdad opuesta si
+$c_i<0$). Por tanto la dinámica completa queda determinada, para cada población,
+por una orientación (homofílica/heterofílica) y un umbral clásico efectivo
+$\theta_i$ (Proposición~\ref{prop:reduccion}). Consecuencias:
+\begin{itemize}
+  \item El modelo \modP{} de dos poblaciones con matriz general y $\tau$ común
+  \emph{no es más general} que un modelo de Schelling clásico con umbrales
+  distintos por población y con la posibilidad de invertir la preferencia. Esto
+  lo conecta directamente con la literatura sobre poblaciones heterogéneas
+  \cite{HatnaBenenson2015,AcunaGoles2025}.
+  \item La normalización $(\varepsilon,\sigma,\rho)$ de las secciones~4.2 y
+  5.2 mezcla filas y no es la parametrización natural; la parametrización
+  natural es $(s_i,\theta_i)_{i}$, con $s_i=\operatorname{sgn}c_i$.
+  \item La asimetría intergrupal $A=\beta-\delta$ (sección~5.3) \emph{no tiene
+  contenido dinámico propio} en \modP: dos matrices con los mismos
+  $(s_i,\theta_i)$ producen exactamente la misma dinámica aunque tengan
+  asimetrías distintas. Sí tiene contenido en \modS{} (O-S más abajo).
+  \item Las secciones 4 y 5 pueden condensarse en una proposición y una tabla,
+  liberando espacio para lo que es nuevo.
+\end{itemize}
+
+\paragraph{O3. La convención del vecindario vacío rompe la invariancia afín.}
+Con la convención $I^H_a=0$ cuando $n_a=0$, una casilla aislada vale $0$ bajo
+$H$ pero también $0$ bajo $\widetilde H=\alpha H+\beta\one$, cuando debería
+valer $\beta$ para que la transformación sea una invariancia. Así, en cuanto hay
+casillas aisladas disponibles como destino, $H$ y $\widetilde H$ \emph{no}
+inducen la misma dinámica. El borrador lo detecta para la incomodidad total
+(observación sobre vecindarios vacíos) pero no para la regla de movimiento, que
+es lo relevante. La propia duda del texto (``no sé si es mejor tomar
+$\Icl_a=1$'') muestra que la convención es en realidad un \emph{parámetro} del
+modelo. Propuesta: introducir el valor de aislamiento $\iota_i$ de cada tipo, o
+bien, de forma más elegante, añadir a $H$ una columna para el vacío $H_{i,\vac}$
+(sección~\ref{sec:marco}). Esto además unifica \modP{} y \modS.
+
+\paragraph{O4. Las rectas $c_i=0$ no son bifurcaciones en sentido estricto.}
+Al acercarse a $c_i=0$ con $\tau$ fijo, $\theta_i\to\pm\infty$: la población
+queda \emph{congelada} (todos cómodos) si $\tau>H_{i,i}$, o en \emph{búsqueda
+perpetua} (todos incómodos, sin mejora posible salvo el aislamiento) si
+$\tau<H_{i,i}$. Es decir, antes de llegar a la recta neutral el sistema atraviesa
+regímenes triviales determinados por el umbral. Los cambios macroscópicos
+interesantes ocurren a valores finitos de $\theta_i\in(0,1)$, que es donde hay
+que buscar transiciones (como en el diagrama de fases de
+\cite{Gauvin2009}). Esto explica, por ejemplo, la figura~3 y la lentitud
+observada en el caso $\alpha=0{,}4$, $\beta=\gamma=0{,}6$, $\tau=0{,}5$: allí la
+población $-1$ es neutral con incomodidad constante $0{,}6>\tau$, está siempre
+incómoda y solo puede mejorar yendo a una casilla aislada, de modo que en cada
+paso cada agente $-1$ recorre toda la retícula buscando una.
+
+\paragraph{O5. Los umbrales de las figuras caen exactamente en una
+discontinuidad.}
+Como $\Icl_a$ solo toma valores racionales $m/n$ con $n\le k$, la dinámica es
+constante a trozos en $\theta_i$ y salta en esos racionales. En las figuras~1 y
+2, $\theta=(0{,}5-0{,}4)/(0{,}6-0{,}4)=1/2$, justo en un salto: un agente con
+4 vecinos iguales y 4 distintos está exactamente en el umbral. Además, en
+aritmética de coma flotante la suma $0{,}4+\dots+0{,}6$ sobre 8 vecinos da
+$0{,}49999999999999994$, $0{,}5$ o $0{,}5000000000000001$ según el orden en que se
+recorran los vecinos (lo hemos comprobado), así que la decisión ``cómodo/incómodo''
+depende del orden de iteración. Recomendaciones: (i) comparar recuentos enteros
+en lugar de promedios en coma flotante; (ii) en los barridos, muestrear
+$\theta$ fuera de la retícula de racionales o estudiar explícitamente las
+mesetas.
+
+\paragraph{O6. Regla de movimiento subespecificada.}
+El borrador dice que el agente ``busca una casilla disponible en la que su
+incomodidad sea menor''. El código implementa algo concreto: la casilla vacía
+\emph{más cercana} en distancia de Chebyshev donde mejora, elegida al azar entre
+las de ese radio; actualización asíncrona en orden aleatorio por barrido. Otras
+elecciones razonables (vacío aleatorio global con mejora, mejor casilla global,
+movimiento restringido a radio $R$) cambian la dinámica cuantitativa y a veces
+la cualitativa. Hay que fijar y declarar la regla (idealmente con el protocolo
+ODD \cite{Grimm2020}) y tratar la regla como un factor experimental secundario.
+
+\paragraph{O7. Errores y puntos a corregir en la sección 6.}
+\begin{itemize}
+  \item La conclusión ``$h\le C_{-1,-1}+C_{1,1}$ y por ende
+  $h=C_{-1,-1}+C_{1,1}$'' es incorrecta: una desigualdad no implica la igualdad.
+  Lo correcto es que $h=\frac{N_1}{N}C_{1,1}+\frac{N_{-1}}{N}C_{-1,-1}$ es un
+  promedio ponderado, luego
+  $\min(C_{1,1},C_{-1,-1})\le h\le\max(C_{1,1},C_{-1,-1})$.
+  \item La matriz $C$ se define como $3\times3$ con una fila $C_{\vac,\cdot}$,
+  pero los vacíos no son agentes y esa fila no está definida. Además
+  $C_{i,\vac}$ se normaliza por $n_a$ (vecinos ocupados), con lo que
+  $C_{i,1}+C_{i,-1}+C_{i,\vac}\neq1$. Conviene definir dos matrices de
+  contacto: $C^{\mathrm{occ}}$ (normalizada por $n_a$, natural para \modP) y
+  $C^{\mathrm{full}}$ (normalizada por $k=|V|$, incluyendo la columna de
+  vacíos, natural para \modS).
+  \item La identidad $\bar I^H_i=\sum_j C_{i,j}H_{i,j}$ es válida para \modP{}
+  con la convención de aislamiento $0$; para \modS{} la identidad análoga usa
+  los recuentos medios: $\bar I^H_i=\sum_j \bar n_{i,j}H_{i,j}$.
+  \item En la sección 2 se escribe $n_{a,\vac}=8-n_a$: debe ser $k-n_a$, con
+  $k$ el tamaño de la vecindad, para que valga en cualquier geometría.
+\end{itemize}
+
+\paragraph{O8. Figuras.}
+Ninguna figura indica tamaño de la retícula, densidad de vacíos, composición,
+semilla, número de pasos, regla de movimiento ni programa utilizado; la leyenda
+de colores es ilegible. Cada figura es una sola realización, por lo que no
+permite afirmaciones cuantitativas. Las figuras deberían sustituirse por
+(i) instantáneas acompañadas de sus parámetros completos y (ii) gráficas de
+observables promediados sobre muchas realizaciones.
+
+\paragraph{O9. Posicionamiento en la literatura.}
+La introducción está vacía. Hay al menos cuatro líneas con las que el trabajo
+debe dialogar explícitamente, porque delimitan qué es nuevo:
+\begin{itemize}
+  \item \textbf{Sakoda} \cite{Sakoda1971,Hegselmann2017} y su reanálisis
+  \cite{Goles2017,Goles2020}: el modelo de Sakoda ya usa una matriz de
+  actitudes (atracción, indiferencia, repulsión) entre grupos, con los vacíos
+  como referencia. El modelo \modS{} es, esencialmente, un modelo de Sakoda con
+  actitudes continuas y umbral de Schelling. Hay que decir con precisión qué
+  añadimos.
+  \item \textbf{Física estadística} \cite{Vinkovic2006,DallAsta2008,
+  Gauvin2009,Grauwin2009,Castellano2009}: analogías con sistemas de espines,
+  diagramas de fases en (tolerancia, densidad de vacíos), existencia o no de
+  funciones potenciales. Con dos tipos y vacíos, \modS{} con interacciones
+  simétricas es un gas reticular de tipo Blume--Emery--Griffiths
+  \cite{BEG1971} a temperatura cero con saltos no locales.
+  \item \textbf{Juegos de Schelling} \cite{Chauhan2018,Echzell2019,
+  Elkind2019}: estudian la convergencia de dinámicas de mejora en versiones
+  estratégicas del modelo; los resultados de potencial de la
+  sección~\ref{sec:marco} son de este tipo \cite{MondererShapley1996}.
+  \item \textbf{Heterogeneidad de tolerancias}
+  \cite{HatnaBenenson2012,HatnaBenenson2015,AcunaGoles2025}: por O2, parte de
+  lo que se obtiene en \modP{} ya está en esta línea.
+\end{itemize}
+
+\paragraph{O10. Generalidad y conexión con el trabajo previo del grupo.}
+El borrador fija dos tipos $\{1,-1\}$ (el código usa $\{1,2\}$). La
+formulación debería hacerse para $n$ tipos desde el principio, porque (a) el
+código ya tiene la versión de tres tipos, y (b) el modelo del artículo sobre
+desplazamiento de la población neutral (\texttt{modelo.py}) es un caso
+particular de \modS{} con la matriz $3\times3$ (orden $1,0,-1$)
+\[
+  H^{\mathrm{neu}}=\begin{pmatrix}0&0&1\\1&0&1\\1&0&0\end{pmatrix},
+\]
+lo que da continuidad al programa y permite validar la implementación nueva
+contra resultados ya publicados.
+
+\paragraph{Menores.}
+Autor ``pepito''; erratas (``llamadl'', ``qye'', ``uqe'', ``neotral'',
+``Cuadnod'', ``interprestar'', ``aparecien'', ``lta'', ``modod'',
+``imiytando'', ``siguinete'', ``independientee'', ``sul'', ``tota'', ``ue'');
+una nota interna en el cuerpo del texto (``el programa se demora en sacar la
+imagen''); unificar la terminología (``matriz de incomodidad'' en el borrador,
+``matriz de aversión'' en el código, ``afinidad--aversión'' en la descripción
+del proyecto).
+
+\subsection{Observaciones sobre el código}
+
+\paragraph{C1. Autoconteo al evaluar casillas candidatas (posible sesgo).}
+En \texttt{move()}, la incomodidad en una casilla candidata $y$ se calcula con
+\texttt{get\_neighbors(y)} mientras el agente sigue en su posición $x$. Si $y$
+es adyacente a $x$ (siempre ocurre en la búsqueda de radio 1), el propio agente
+se cuenta como vecino de sí mismo en $y$, con peso $H_{i,i}$. Con
+$H^{\mathrm{cl}}$ el efecto es nulo porque $H_{i,i}=0$, pero con matrices
+generales sesga la elección: si $H_{i,i}<0$, sobrevalora los destinos
+adyacentes; si $H_{i,i}>0$, los infravalora. También impide que la identidad de
+potencial (Proposición~\ref{prop:potencial}) se cumpla exactamente. Debe
+corregirse excluyendo al agente de su propio vecindario.
+
+\paragraph{C2. Coste de la búsqueda.}
+Un agente incómodo que no puede mejorar recorre toda la retícula en cada paso,
+con coste $O(L^2k)$. En los regímenes de búsqueda perpetua (O4) esto domina el
+tiempo de cálculo e impide barridos amplios. Propuesta: un motor vectorizado en
+\texttt{numpy} que mantenga, para cada tipo $j$, el campo de recuentos
+$n_j(y)$ en todas las casillas (convolución con el núcleo de la vecindad) y lo
+actualice localmente tras cada movimiento; la evaluación de un candidato pasa a
+ser una consulta $O(1)$. Mesa se mantiene para la visualización.
+
+\paragraph{C3. Tipos de estado final.}
+El criterio de parada (ningún agente se movió en un barrido) no distingue entre
+un equilibrio \emph{satisfecho} (todos cómodos) y un equilibrio
+\emph{bloqueado} (hay incómodos que no encuentran mejora). Hay que registrar
+ambos, porque en los regímenes heterofílicos y mixtos son distintos. Tampoco hay
+límite de pasos ni detección de ciclos.
+
+\paragraph{C4. Geometría fija.}
+La vecindad está fijada a Moore de radio 1 (\texttt{moore=True}); además la
+vecindad de interacción y la de búsqueda coinciden en forma. Deben ser
+parámetros independientes: tipo (Moore/von Neumann), radio de interacción $r$ y
+regla/radio de búsqueda.
+
+\paragraph{C5. Inconsistencias menores.}
+En \texttt{schelling\_general3.py} la documentación dice que la matriz por
+defecto tiene unos fuera de la diagonal, pero los valores por defecto de
+\texttt{\_\_init\_\_} forman un \emph{ciclo} de aversiones
+($1\to2\to3\to1$), y los valores de reserva de \texttt{\_flotante\_valido}
+difieren de ambos. El ciclo es, de hecho, un caso muy interesante
+(Conjetura~\ref{conj:ciclo}), pero debe ser una elección explícita.
+
+% ===============================================================
+\section{Marco unificado propuesto}
+\label{sec:marco}
+% ===============================================================
+
+\subsection{Definiciones}
+
+\begin{definicion}[Espacio, tipos y vecindades]
+Sea $G=(V,E)$ el grafo de sitios: el toro $\mathbb{Z}_L^2$ con la vecindad
+$V_r^{\mathrm M}(x)=\{y\neq x:\|y-x\|_\infty\le r\}$ (Moore, $k=(2r+1)^2-1$) o
+$V_r^{\mathrm N}(x)=\{y\neq x:\|y-x\|_1\le r\}$ (von Neumann, $k=2r(r+1)$), o
+bien una red. Hay $n$ tipos $T=\{1,\dots,n\}$ y un símbolo $\vac$ para el vacío.
+Una configuración es $\eta:V\to T\cup\{\vac\}$ con $N_i$ sitios de tipo $i$ y
+densidad de vacíos $\rho_\vac$. Para un sitio $x$ y un agente $a$ (que se excluye
+de su propio vecindario), $n_j(x)$ es el número de vecinos de $x$ de tipo $j$,
+$n(x)=\sum_{j\in T}n_j(x)$ y $n_\vac(x)=k-n(x)$.
+\end{definicion}
+
+\begin{definicion}[Matriz extendida]
+La matriz de afinidad--aversión extendida es
+$H\in\R^{n\times(n+1)}$, con columnas indexadas por $T\cup\{\vac\}$:
+$H_{i,j}$ es la incomodidad que un agente de tipo $i$ asocia a un vecino de tipo
+$j$, y $H_{i,\vac}$ la que asocia a una casilla vecina vacía. Cada tipo tiene
+un umbral $\tau_i$ (el caso del borrador es $\tau_i\equiv\tau$).
+\end{definicion}
+
+\begin{definicion}[Modelos \modP{} y \modS]
+Para un agente de tipo $i$ situado (o evaluado) en $x$:
+\begin{align*}
+ \modP:&\quad I^{\modP}_i(x)=
+ \begin{cases}\dfrac{1}{n(x)}\displaystyle\sum_{j\in T}n_j(x)H_{i,j},& n(x)>0,\\[2mm]
+ \iota_i,& n(x)=0,\end{cases}\\
+ \modS:&\quad I^{\modS}_i(x)=\sum_{j\in T}n_j(x)H_{i,j}+n_\vac(x)H_{i,\vac}.
+\end{align*}
+El código actual corresponde a \modS{} con $H_{i,\vac}=0$; el borrador a
+\modP{} con $\iota_i=0$. A densidad máxima ($n(x)=k$) se tiene
+$I^{\modS}_i=k\,I^{\modP}_i$: ambos modelos coinciden y la diferencia entre
+ellos es exactamente el tratamiento de los vacíos.
+\end{definicion}
+
+\begin{definicion}[Dinámica]
+Actualización asíncrona: en cada barrido los agentes se recorren en orden
+aleatorio. Un agente $a$ de tipo $i$ en $x$ es \emph{cómodo} si
+$I_i(x)\le\tau_i$. Si es incómodo, elige un destino $y$ en el conjunto de
+vacíos que \emph{mejoran}, $\{y:\eta(y)=\vac,\ I_i(y)<I_i(x)\}$, según una
+regla de búsqueda $\mathcal B$ (por defecto: los de menor distancia a $x$,
+uniformemente al azar entre ellos). Si el conjunto es vacío, permanece. El
+estado final es \emph{satisfecho} si todos son cómodos y \emph{bloqueado} si hay
+incómodos sin mejora disponible.
+\end{definicion}
+
+\subsection{Invariancias}
+
+\begin{proposicion}[Invariancia en \modP]\label{prop:invP}
+Para cada tipo $i$, la transformación de la fila
+$H_{i,\cdot}\mapsto\lambda_iH_{i,\cdot}+\mu_i$, junto con
+$\tau_i\mapsto\lambda_i\tau_i+\mu_i$ e $\iota_i\mapsto\lambda_i\iota_i+\mu_i$,
+con $\lambda_i>0$, deja invariante la dinámica. Si $\tau$ es común, solo las
+transformaciones globales ($\lambda_i=\lambda$, $\mu_i=\mu$) son invariancias,
+y solo si $\iota$ se transforma también.
+\end{proposicion}
+
+\begin{proposicion}[Invariancia en \modS]\label{prop:invS}
+En un grafo $k$-regular, la transformación de la fila extendida (incluida la
+columna $\vac$) $H_{i,\cdot}\mapsto\lambda_iH_{i,\cdot}+\mu_i$, con
+$\tau_i\mapsto\lambda_i\tau_i+k\mu_i$ y $\lambda_i>0$, deja invariante la
+dinámica. Sumar una constante solo a las columnas ocupadas \emph{no} es una
+invariancia: equivale a cambiar $H_{i,\vac}$, es decir, el atractivo relativo
+de los vacíos. En grafos no regulares (redes de Erdős--Rényi) ni siquiera la
+traslación de la fila completa es una invariancia, porque $k$ depende del sitio.
+\end{proposicion}
+
+Ambas proposiciones son inmediatas. Su interés es que fijan los
+\emph{parámetros efectivos} de cada modelo, que son los que hay que barrer.
+
+\subsection{Reducción del modelo \modP{} con dos poblaciones}
+
+\begin{proposicion}[Reducción]\label{prop:reduccion}
+Sea $n=2$, $\bar\imath$ el otro tipo, $c_i=H_{i,\bar\imath}-H_{i,i}\neq0$,
+$f(x)=n_{\bar\imath}(x)/n(x)$ la fracción de vecinos distintos y $g=1-f$ la de
+iguales. Definamos
+\[
+ s_i=\operatorname{sgn}c_i,\qquad
+ \theta_i=\begin{cases}\dfrac{\tau_i-H_{i,i}}{c_i},&c_i>0,\\[2mm]
+ \dfrac{\tau_i-H_{i,\bar\imath}}{|c_i|},&c_i<0,\end{cases}\qquad
+ \xi_i=\begin{cases}\dfrac{\iota_i-H_{i,i}}{c_i},&c_i>0,\\[2mm]
+ \dfrac{\iota_i-H_{i,\bar\imath}}{|c_i|},&c_i<0.\end{cases}
+\]
+Entonces, en \modP, un agente de tipo $i$ con $s_i=+1$ se comporta como un
+agente del modelo clásico con umbral $\theta_i$ sobre la fracción de distintos
+$f$; con $s_i=-1$, como un agente clásico ``invertido'' con umbral $\theta_i$
+sobre la fracción de iguales $g$. En ambos casos una casilla aislada equivale a
+una casilla ficticia con valor $\xi_i$. En consecuencia, la dinámica de \modP{}
+con $n=2$ queda determinada por $(s_i,\theta_i,\xi_i)_{i=1,2}$, la geometría,
+las densidades y la regla de búsqueda.
+\end{proposicion}
+
+\begin{proof}[Esbozo]
+Si $c_i>0$, $I=H_{i,i}+c_if$ es afín creciente en $f$. Si $c_i<0$,
+$I=H_{i,\bar\imath}+|c_i|\,g$ es afín creciente en $g$. Se aplica la
+Proposición~\ref{prop:invP} fila a fila.
+\end{proof}
+
+\begin{corolario}[Regímenes por población]
+Para cada tipo: si $\theta_i\ge1$ la población es \emph{inerte} (nunca
+incómoda); si $\theta_i<0$ está en \emph{búsqueda perpetua} (siempre incómoda);
+si $0\le\theta_i<1$ es \emph{activa}. Si $c_i=0$ es neutral y, según
+$\tau_i\gtrless H_{i,i}$, inerte o en búsqueda perpetua. Combinando
+orientación y régimen, el espacio de parámetros de \modP{} con $n=2$ se reduce a
+cuatro cuadrados $(\theta_1,\theta_2)\in[0,1)^2$, uno por par de orientaciones
+(HH, HX, XH, XX, con H homofílica y X heterofílica), más los bordes triviales.
+\end{corolario}
+
+\begin{observacion}
+La novedad genuina de la formulación matricial en \modP{} aparece con
+$n\ge3$: la incomodidad
+$I_i=H_{i,i}+\sum_{j\neq i}(H_{i,j}-H_{i,i})\,p_j$ depende de un vector de
+contrastes de dimensión $n-1$ y ya no se reduce a una sola fracción.
+\end{observacion}
+
+\subsection{El modelo \modS{} con dos poblaciones: arquetipos de preferencia}
+
+Con $a_i=H_{i,i}-H_{i,\vac}$ y $b_i=H_{i,\bar\imath}-H_{i,\vac}$ se tiene
+$I^{\modS}_i(x)-kH_{i,\vac}=a_i\,n_i(x)+b_i\,n_{\bar\imath}(x)$: la preferencia
+es una forma lineal sobre los puntos enteros del triángulo
+$\{(n_i,n_{\bar\imath}):n_i+n_{\bar\imath}\le k\}$. Por la
+Proposición~\ref{prop:invS}, con umbrales por tipo solo importan la dirección
+$\varphi_i=\operatorname{atan2}(b_i,a_i)$ y el umbral reducido
+$\hat\tau_i=(\tau_i-kH_{i,\vac})/\|(a_i,b_i)\|$. La circunferencia de
+direcciones contiene arquetipos cualitativamente distintos, muchos de los cuales
+no existen en \modP:
+
+\begin{center}
+\small
+\begin{tabular}{@{}ccl@{}}
+\toprule
+$a_i$ (iguales) & $b_i$ (distintos) & arquetipo \\
+\midrule
+$0$ & $+$ & Schelling clásico (código actual): indiferente a iguales y vacíos \\
+$-$ & $+$ & segregacionista de Sakoda: atraído por iguales, repelido por distintos \\
+$-$ & $0$ & cohesivo: busca iguales, indiferente a distintos \\
+$-$ & $-$ & gregario: busca densidad (con preferencia según $a_i\lessgtr b_i$) \\
+$+$ & $+$ & misántropo: busca aislamiento \\
+$+$ & $-$ & heterofílico: busca distintos, huye de iguales \\
+$0$ & $-$ & busca distintos, indiferente a iguales \\
+$+$ & $0$ & huye de iguales, indiferente a distintos \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Aquí la asimetría $b_1\neq b_2$ \emph{sí} tiene contenido dinámico, y el signo
+relativo de $b_1$ y $b_2$ resulta decisivo.
+
+\subsection{Funciones potenciales y convergencia en \modS}
+
+\begin{proposicion}[Potencial ponderado]\label{prop:potencial}
+Supongamos que existen pesos $w_i>0$ y una matriz simétrica $S\in\R^{n\times n}$
+tales que $H_{i,j}-H_{i,\vac}=w_iS_{i,j}$ para todo $i,j\in T$. Sea
+\[
+ \Phi(\eta)=\sum_{\{u,v\}\in E,\ \eta(u),\eta(v)\neq\vac}S_{\eta(u),\eta(v)} .
+\]
+Si un agente $a$ de tipo $i$ se mueve de $x$ a $y$ (excluyéndose a sí mismo de
+su vecindario), entonces
+$\Phi(\eta')-\Phi(\eta)=\bigl(I_i(y)-I_i(x)\bigr)/w_i$. En consecuencia, toda
+trayectoria de la dinámica \modS{} alcanza un punto fijo en un número finito de
+movimientos, para cualquier umbral, regla de búsqueda y orden de
+actualización.
+\end{proposicion}
+
+\begin{proof}[Esbozo]
+$I_i(x)=kH_{i,\vac}+w_i\sum_{v\in V(x),\,\eta(v)\neq\vac}S_{i,\eta(v)}$.
+Al mover $a$ solo cambian las aristas incidentes en $a$: se pierden las de $x$ y
+se ganan las de $y$, que es exactamente $(I_i(y)-I_i(x))/w_i$. Como cada
+movimiento es una mejora estricta, $\Phi$ decrece estrictamente y el espacio de
+configuraciones es finito \cite{MondererShapley1996}.
+\end{proof}
+
+\begin{corolario}
+Con $n=2$ la condición es $b_1b_2>0$ o $b_1=b_2=0$, sin restricción sobre
+$a_1,a_2$ ni simetría de $H$. En particular, el modelo clásico de suma converge
+siempre y su potencial es el número de aristas entre tipos distintos. El único
+caso de dos poblaciones sin convergencia garantizada es el de
+\emph{persecución}, $b_1b_2<0$: una población es atraída por la otra, que la
+rehúye.
+\end{corolario}
+
+\begin{conjetura}[Potencial lexicográfico]\label{conj:lex}
+Si el grafo dirigido ``$i$ se preocupa por $j$'' ($i\to j$ si
+$H_{i,j}\neq H_{i,\vac}$), una vez agrupadas las clases que satisfacen la
+condición de la Proposición~\ref{prop:potencial}, es acíclico, existe un
+potencial lexicográfico y la dinámica converge. Ejemplos: $n=2$ con $b_1=0$; y
+el modelo de población neutral $H^{\mathrm{neu}}$, donde los extremos son
+indiferentes a los neutrales ($\Phi_1=$ aristas $(1,-1)$ decrece con los
+movimientos de los extremos y no cambia con los de los neutrales;
+$\Phi_2=$ incomodidad total de los neutrales decrece con los movimientos de
+estos). Esto daría una prueba de convergencia para el modelo del artículo sobre
+la población neutral.
+\end{conjetura}
+
+\begin{conjetura}[Ciclos de aversión]\label{conj:ciclo}
+Con $n=3$ y aversiones cíclicas ($1$ rehúye a $2$, $2$ a $3$, $3$ a $1$, resto
+indiferente), la condición de ciclo
+$H_{12}H_{23}H_{31}=H_{13}H_{32}H_{21}$ necesaria para un potencial ponderado
+falla. Conjeturamos que existen trayectorias que no convergen (dinámica
+persistente tipo piedra--papel--tijera) en un rango abierto de umbrales y
+densidades.
+\end{conjetura}
+
+\begin{observacion}
+En \modP{} no hay en general función potencial, ni siquiera con $H$ simétrica,
+porque la normalización por $n(x)$ rompe la simetría de las contribuciones de
+cada arista. La convergencia en \modP{} es por tanto una cuestión abierta que
+hay que estudiar numéricamente (tasa de no convergencia, detección de ciclos) y,
+si es posible, con contraejemplos explícitos en retículos pequeños.
+\end{observacion}
+
+% ===============================================================
+\section{Observables y protocolo experimental}
+\label{sec:protocolo}
+% ===============================================================
+
+\subsection{Observables}
+
+\begin{longtable}{@{}p{4.2cm}p{10.3cm}@{}}
+\toprule
+Observable & Definición y uso \\
+\midrule
+\endhead
+Fracción de incómodos $u_i(t)$ & Por tipo; su valor final distingue estados
+satisfechos ($u=0$) y bloqueados ($u>0$). \\
+Incomodidad media $\bar I_i(t)$ & Por tipo, en la escala de cada modelo. \\
+Matrices de contacto & $C^{\mathrm{occ}}_{i,j}$ (normalizada por $n(x)$) y
+$C^{\mathrm{full}}_{i,j}$, $j\in T\cup\{\vac\}$ (normalizada por $k$). \\
+Homofilia $h$ & $h=\sum_i\frac{N_i}{N}C^{\mathrm{occ}}_{i,i}$. \\
+Densidad de interfaz $\rho_{\mathrm{int}}$ & Fracción de aristas ocupadas entre
+tipos distintos; índice de segregación
+$s=1-\rho_{\mathrm{int}}/\rho_{\mathrm{int}}^{\mathrm{azar}}$ ($s>0$
+segregación, $s<0$ mezcla antisegregada). \\
+Parámetro de orden alternado & Para regímenes heterofílicos:
+$m_{\mathrm{alt}}=\bigl|\sum_x(-1)^{x_1+x_2}\sigma(x)\bigr|/N$ (tablero de
+ajedrez) y pico del factor de estructura $S(\mathbf q)$ (rayas). \\
+Clústeres & Número de componentes por tipo, fracción del mayor, distribución
+de tamaños. \\
+Longitud característica $\ell$ & Primer cero de la función de correlación o
+$1/|\mathbf q^*|$ del pico de $S(\mathbf q)$; permite comparar geometrías. \\
+Dinámica & Barridos hasta el punto fijo $T_c$, número total de movimientos,
+fracción de corridas no convergidas antes de $T_{\max}$, ciclos detectados
+(\emph{hash} de configuraciones). \\
+Potencial $\Phi(t)$ & En \modS, verificación de la Proposición~\ref{prop:potencial}
+(debe ser estrictamente decreciente). \\
+Aislados & Fracción de agentes con $n(x)=0$ (sensibilidad a $\iota_i$ y $H_{i,\vac}$). \\
+Entropía local & Ya implementada; se conserva por continuidad. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Protocolo de simulación}
+
+\begin{itemize}
+  \item \textbf{Tamaños:} $L\in\{40,80,160\}$ (análisis de tamaño finito en la
+  fase~5); composición $N_1=N_2$ salvo que se indique; $\rho_\vac\in\{0{,}05,
+  0{,}1,0{,}2,0{,}3\}$.
+  \item \textbf{Réplicas:} $R=50$--$100$ semillas por punto; media e
+  intervalo de confianza del 95\,\% por \emph{bootstrap}.
+  \item \textbf{Parada:} punto fijo, ciclo detectado o $T_{\max}$ barridos;
+  siempre se registra la causa.
+  \item \textbf{Aritmética exacta:} comparaciones con recuentos enteros; los
+  umbrales se muestrean evitando la retícula de racionales $m/n$, $n\le k$, o se
+  estudian las mesetas explícitamente (O5).
+  \item \textbf{Reproducibilidad:} configuración en ficheros YAML; cada salida
+  guarda parámetros, semilla y \emph{hash} de la versión del código; resultados en
+  formato tabular (Parquet o CSV) con una fila por corrida y series temporales
+  submuestreadas.
+\end{itemize}
+
+% ===============================================================
+\section{Programa de investigación por fases}
+\label{sec:programa}
+% ===============================================================
+
+\begin{fase}{Fase 0. Especificación e implementación unificada}
+\item[Objetivo.] Una sola implementación, verificada, de \modP{} y \modS{} para
+$n$ tipos y geometría parametrizada.
+\item[Tareas.] (i) Especificación ODD \cite{Grimm2020} del modelo unificado de
+la sección~\ref{sec:marco}. (ii) Motor vectorizado con campos de recuentos
+(C2), autoconteo corregido (C1), estados satisfecho/bloqueado, detección de
+ciclos y $T_{\max}$ (C3), vecindades Moore/von Neumann de radio $r$ y regla de
+búsqueda independiente (C4). (iii) Envoltorio Mesa para la visualización.
+(iv) Pruebas automáticas: recuperación del clásico; \emph{invariancia exacta}
+de trayectorias con la misma semilla bajo las transformaciones de las
+Proposiciones~\ref{prop:invP}--\ref{prop:invS}; monotonía estricta de $\Phi$ en
+\modS; coincidencia de \modP{} y \modS{} a densidad máxima.
+\item[Entregable.] Paquete \texttt{schelling\_matricial} con pruebas y un
+cuaderno de validación.
+\item[Cierre.] Todas las pruebas pasan; reproducimos cualitativamente el
+diagrama de fases clásico \cite{Gauvin2009} y los resultados del artículo de
+la población neutral con $H^{\mathrm{neu}}$.
+\end{fase}
+
+\begin{fase}{Fase 1. Teoría del modelo \modP}
+\item[Objetivo.] Reescribir las secciones 2--5 del borrador en torno a la
+Proposición~\ref{prop:reduccion}.
+\item[Tareas.] Demostraciones completas; tabla de regímenes
+$(s_i,\text{inerte/activo/perpetuo})$; decisión sobre $\iota_i$ (O3); corrección
+de la sección 6 (O7); análisis de las mesetas en $\theta_i$ (O5); búsqueda de
+contraejemplos de convergencia en retículos pequeños.
+\item[Entregable.] Nueva versión de las secciones teóricas del borrador.
+\item[Cierre.] Revisión conjunta de los enunciados.
+\end{fase}
+
+\begin{fase}{Fase 2. Teoría del modelo \modS}
+\item[Objetivo.] Desarrollar la teoría paralela para la versión de suma.
+\item[Tareas.] Proposición~\ref{prop:invS}; clasificación por direcciones
+$\varphi_i$; prueba de la Proposición~\ref{prop:potencial} y de la
+Conjetura~\ref{conj:lex}; cotas del número de movimientos; relación precisa con
+Sakoda \cite{Goles2017} y con el modelo de Blume--Emery--Griffiths
+\cite{BEG1971}.
+\item[Entregable.] Sección teórica nueva ``El modelo de suma''.
+\item[Cierre.] Pruebas escritas y verificadas numéricamente (fase 0).
+\end{fase}
+
+\begin{fase}{Fase 3. Diagramas de régimen con dos poblaciones (Moore, $r=1$)}
+\item[Objetivo.] Mapas cuantitativos de la dinámica en la geometría de
+referencia.
+\item[Tareas.] \modP: barrido de $(\theta_1,\theta_2)\in[0,1)^2$ para los
+cuatro pares de orientaciones y cuatro valores de $\rho_\vac$. \modS: barrido de
+$(\varphi_1,\varphi_2)$ en la circunferencia con $\hat\tau_i$ fijo, y de
+$\hat\tau$ en direcciones representativas; atención especial al régimen de
+persecución $b_1b_2<0$.
+\item[Entregable.] Mapas de $s$, $u$, $T_c$, $\ell$ y tasa de no convergencia;
+localización de transiciones.
+\item[Cierre.] Mapas estables al duplicar $R$ y al pasar de $L=40$ a $L=80$.
+\end{fase}
+
+\begin{fase}{Fase 4. Comparación \modP{} frente a \modS}
+\item[Objetivo.] Cuantificar el efecto de normalizar por el número de vecinos.
+\item[Tareas.] Emparejar parámetros equivalentes a densidad máxima y variar
+$\rho_\vac$; estudiar el papel de $H_{i,\vac}$ e $\iota_i$.
+\item[Entregable.] Figura de divergencia entre modelos en función de
+$\rho_\vac$.
+\item[Cierre.] Contraste de la Hipótesis~\ref{hip:densidad}.
+\end{fase}
+
+\begin{fase}{Fase 5. Geometría}
+\item[Objetivo.] Efecto del tipo y radio de la vecindad.
+\item[Tareas.] Moore y von Neumann con $r\in\{1,2,3\}$ ($k=8,24,48$ y
+$k=4,12,24$); umbrales de \modS{} escalados con $k$; análisis de tamaño finito
+en $L$; regímenes heterofílicos en vecindades bipartitas y no bipartitas.
+\item[Entregable.] Leyes de escala de $\ell$ con $r$; comparación de patrones
+alternados.
+\item[Cierre.] Contraste de las Hipótesis~\ref{hip:frustracion} y
+\ref{hip:escala}.
+\end{fase}
+
+\begin{fase}{Fase 6. Tres poblaciones}
+\item[Objetivo.] Explorar lo que no se reduce al caso clásico.
+\item[Tareas.] Matrices jerárquicas (generalizando $H^{\mathrm{neu}}$) frente a
+cíclicas; prueba o refutación de la Conjetura~\ref{conj:ciclo}; espacio de
+contrastes de dimensión 2 en \modP.
+\item[Entregable.] Catálogo de regímenes para $n=3$.
+\item[Cierre.] Contraste de las Hipótesis~\ref{hip:jerarquia} y
+\ref{hip:ciclo}.
+\end{fase}
+
+\begin{fase}{Fase 7 (opcional). Redes y heterogeneidad}
+\item[Objetivo.] Extensiones naturales ya parcialmente implementadas.
+\item[Tareas.] Redes de Erdős--Rényi (\texttt{schelling\_red2.py}), recordando que
+en \modS{} la traslación deja de ser invariancia; umbrales individuales
+\cite{AcunaGoles2025}.
+\item[Entregable.] Nota o sección adicional.
+\end{fase}
+
+\begin{fase}{Fase 8. Redacción}
+\item[Objetivo.] Convertir el trabajo en uno o dos artículos.
+\item[Opciones.] (a) Un artículo teórico--numérico con \modP{} y \modS{} para
+$n=2$ y la geometría; (b) un segundo artículo sobre $n=3$ y convergencia. La
+decisión se toma al cerrar la fase 4.
+\end{fase}
+
+% ===============================================================
+\section{Hipótesis de trabajo}
+% ===============================================================
+
+\begin{hipotesis}[Equivalencia en \modP]
+En \modP{} con $n=2$, dos matrices con los mismos $(s_i,\theta_i,\xi_i)$
+producen distribuciones idénticas de todos los observables; en particular la
+asimetría $A=\beta-\delta$ no tiene efecto propio.
+\end{hipotesis}
+
+\begin{hipotesis}[Coincidencia a alta densidad]\label{hip:densidad}
+La discrepancia entre \modP{} y \modS{} con parámetros emparejados crece con
+$\rho_\vac$ y se anula cuando $\rho_\vac\to0$.
+\end{hipotesis}
+
+\begin{hipotesis}[Persecución]
+En \modS{} con $b_1b_2<0$ existe una región de umbrales en la que la fracción
+de corridas no convergidas no tiende a cero al aumentar $T_{\max}$.
+\end{hipotesis}
+
+\begin{hipotesis}[Frustración geométrica]\label{hip:frustracion}
+En regímenes heterofílicos, la vecindad de von Neumann de radio 1 (grafo
+bipartito) produce orden de tablero de ajedrez ($m_{\mathrm{alt}}$ grande),
+mientras que Moore de radio 1 y von Neumann de radio $\ge2$ (con ciclos
+impares) producen rayas o laberintos con muchos estados finales degenerados y
+convergencia más lenta. La figura~2 del borrador es compatible con esto.
+\end{hipotesis}
+
+\begin{hipotesis}[Escala con el radio]\label{hip:escala}
+En regímenes homofílicos, la longitud característica de los dominios crece
+linealmente con $r$, y el umbral de aparición de segregación, expresado en
+$\theta$, depende débilmente de $k$ salvo por los saltos en racionales.
+\end{hipotesis}
+
+\begin{hipotesis}[Jerarquía]\label{hip:jerarquia}
+Las matrices de $n=3$ con grafo de preocupación acíclico convergen siempre en
+\modS.
+\end{hipotesis}
+
+\begin{hipotesis}[Ciclos]\label{hip:ciclo}
+Las matrices cíclicas de $n=3$ presentan dinámica persistente en una región
+abierta de parámetros.
+\end{hipotesis}
+
+% ===============================================================
+\section{Calendario orientativo y dependencias}
+% ===============================================================
+
+\begin{center}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Fase & Depende de & Duración estimada & Producto principal \\
+\midrule
+0 Implementación & --- & 2--3 semanas & paquete verificado \\
+1 Teoría \modP & --- (en paralelo con 0) & 2 semanas & secciones reescritas \\
+2 Teoría \modS & 0 (verificación) & 3 semanas & sección nueva \\
+3 Diagramas $n=2$ & 0, 1, 2 & 3--4 semanas & mapas de régimen \\
+4 \modP{} frente a \modS & 3 & 2 semanas & figura de divergencia \\
+5 Geometría & 3 & 3 semanas & leyes de escala \\
+6 Tres poblaciones & 2, 3 & 3--4 semanas & catálogo $n=3$ \\
+7 Redes (opcional) & 3 & 2 semanas & nota \\
+8 Redacción & 4 (decisión), 5, 6 & 3 semanas & artículo(s) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Decisiones pendientes para el equipo}
+
+\begin{enumerate}
+  \item Convención de aislamiento en \modP: ¿$\iota_i$ libre, $\iota_i=H_{i,i}$
+  (el aislamiento vale como estar entre iguales) u otra?
+  \item Columna de vacíos en \modS: ¿mantener $H_{i,\vac}=0$ como en el código o
+  tratarla como parámetro?
+  \item ¿Umbral común $\tau$ o umbrales por tipo $\tau_i$? (Los segundos hacen
+  exactas las invariancias fila a fila y no complican la implementación.)
+  \item Regla de búsqueda por defecto (la actual: vacío mejorante más cercano).
+  \item Alcance de la publicación (fase 8).
+\end{enumerate}
+
+\section{Primer paso}
+
+Proponemos empezar por la fase 0 y, en paralelo, la fase 1: (i) escribir la
+especificación ODD del modelo unificado y acordar las decisiones de la sección
+anterior; (ii) corregir el autoconteo (C1) en el código actual, porque afecta a
+cualquier resultado con $H_{i,i}\neq0$; (iii) implementar el motor vectorizado
+con sus pruebas de invariancia y de potencial. Con eso tendremos una base
+fiable para las fases numéricas.
+
+% ===============================================================
+\begin{thebibliography}{99}
+% ===============================================================
+
+\bibitem{Schelling1971} T.~C. Schelling. Dynamic models of segregation.
+\emph{Journal of Mathematical Sociology}, 1(2):143--186, 1971.
+
+\bibitem{Schelling1978} T.~C. Schelling. \emph{Micromotives and
+Macrobehavior}. W.~W. Norton, Nueva York, 1978.
+
+\bibitem{Sakoda1971} J.~M. Sakoda. The checkerboard model of social
+interaction. \emph{Journal of Mathematical Sociology}, 1(1):119--132, 1971.
+
+\bibitem{Hegselmann2017} R.~Hegselmann. Thomas C. Schelling and James M.
+Sakoda: The intellectual, technical, and social history of a model.
+\emph{JASSS}, 20(3):15, 2017.
+
+\bibitem{Goles2017} E.~Goles, N.~G. Domic, S.~Rica. Self-organized
+societies: On the Sakoda model of social interactions. \emph{Complexity},
+2017:3548591, 2017.
+
+\bibitem{Goles2020} E.~Goles, S.~Rica, G.~A. Ruz. From immigration to social
+segregation: A view through the Sakoda model of social interactions.
+\emph{Scientific Reports}, 10, 2020.
+
+\bibitem{HatnaBenenson2012} E.~Hatna, I.~Benenson. The Schelling model of
+ethnic residential dynamics: Beyond the integrated--segregated dichotomy of
+patterns. \emph{JASSS}, 15(1):6, 2012.
+
+\bibitem{HatnaBenenson2015} E.~Hatna, I.~Benenson. Combining segregation and
+integration: Schelling model dynamics for heterogeneous population.
+\emph{JASSS}, 18(4):15, 2015.
+
+\bibitem{AcunaGoles2025} G.~Acuña, E.~Goles. Individual tolerances and
+dynamics of intragroup segregation in an extended Schelling model.
+\emph{Scientific Reports}, 15:43050, 2025.
+
+\bibitem{Castellano2009} C.~Castellano, S.~Fortunato, V.~Loreto. Statistical
+physics of social dynamics. \emph{Reviews of Modern Physics}, 81(2):591--646,
+2009.
+
+\bibitem{Vinkovic2006} D.~Vinković, A.~Kirman. A physical analogue of the
+Schelling model. \emph{PNAS}, 103(51):19261--19265, 2006.
+
+\bibitem{DallAsta2008} L.~Dall'Asta, C.~Castellano, M.~Marsili. Statistical
+physics of the Schelling model of segregation. \emph{Journal of Statistical
+Mechanics}, L07002, 2008.
+
+\bibitem{Gauvin2009} L.~Gauvin, J.~Vannimenus, J.-P. Nadal. Phase diagram of
+a Schelling segregation model. \emph{European Physical Journal B},
+70:293--304, 2009.
+
+\bibitem{Grauwin2009} S.~Grauwin, E.~Bertin, R.~Lemoy, P.~Jensen. Competition
+between collective and individual dynamics. \emph{PNAS},
+106(49):20622--20626, 2009.
+
+\bibitem{BEG1971} M.~Blume, V.~J. Emery, R.~B. Griffiths. Ising model for the
+$\lambda$ transition and phase separation in He$^3$--He$^4$ mixtures.
+\emph{Physical Review A}, 4(3):1071--1077, 1971.
+
+\bibitem{MondererShapley1996} D.~Monderer, L.~S. Shapley. Potential games.
+\emph{Games and Economic Behavior}, 14(1):124--143, 1996.
+
+\bibitem{Chauhan2018} A.~Chauhan, P.~Lenzner, L.~Molitor. Schelling
+segregation with strategic agents. En \emph{SAGT 2018}, LNCS 11059,
+pp.~137--149. Springer, 2018.
+
+\bibitem{Echzell2019} H.~Echzell, T.~Friedrich, P.~Lenzner, L.~Molitor,
+M.~Pappik, F.~Schöne, F.~Sommer, D.~Stangl. Convergence and hardness of
+strategic Schelling segregation. En \emph{WINE 2019}, LNCS 11920,
+pp.~156--170. Springer, 2019.
+
+\bibitem{Elkind2019} E.~Elkind, J.~Gan, A.~Igarashi, W.~Suksompong,
+A.~A. Voudouris. Schelling games on graphs. En \emph{IJCAI 2019},
+pp.~266--272, 2019.
+
+\bibitem{Grimm2020} V.~Grimm et al. The ODD protocol for describing
+agent-based and other simulation models: A second update to improve clarity,
+replication, and structural realism. \emph{JASSS}, 23(2):7, 2020.
+
+\bibitem{Fossett2006} M.~Fossett. Ethnic preferences, social distance
+dynamics, and residential segregation. \emph{Journal of Mathematical
+Sociology}, 30(3--4):185--273, 2006.
+
+\bibitem{Zhang2011} J.~Zhang. Tipping and residential segregation: A unified
+Schelling model. \emph{Journal of Regional Science}, 51(1):167--193, 2011.
+
+\end{thebibliography}
+
+\end{document}
