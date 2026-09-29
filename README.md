@@ -4,7 +4,8 @@ Extensión matricial del modelo de desplazamiento de Schelling: motor en `numpy`
 para los modelos P (promediado) y S (de suma), con `n` tipos, matriz de
 afinidad–aversión `H`, retícula toroidal y vecindades de Moore / von Neumann.
 La especificación de esta versión (0.1) está en
-[`docs/especificacion_fase0.md`](docs/especificacion_fase0.md).
+[`docs/especificacion_fase0.md`](docs/especificacion_fase0.md) y la guía
+completa de uso, en el [manual de usuario](docs/manual_usuario.md).
 
 ## Instalación
 
